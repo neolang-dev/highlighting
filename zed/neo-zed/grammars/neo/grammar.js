@@ -89,6 +89,7 @@ module.exports = grammar({
     [$.when_statement],
     [$.typeof_type, $.typeof_expression],
     [$.array_element_pattern, $._expression],
+    [$.array_element_pattern, $.slice_type, $.array_init_expression],
     [$.struct_field_pattern, $.struct_init_field],
     [$.for_c_shorthand_statement],
     [$._expression, $.struct_init_expression],
@@ -513,7 +514,8 @@ module.exports = grammar({
       field('name', alias($.identifier, $.type_identifier)),
     ),
 
-    pointer_type: $ => prec(PREC.UNARY, seq('^', field('element', $._type))),
+    // '^const T', '[..]const T' and '[^]const T' are read-only.
+    pointer_type: $ => prec(PREC.UNARY, seq('^', optional('const'), field('element', $._type))),
 
     array_type: $ => seq(
       '[', field('size', $._expression), ']',
@@ -524,9 +526,9 @@ module.exports = grammar({
 
     inferred_array_type: $ => seq('[', '?', ']', field('element', $._type)),
 
-    slice_type: $ => seq('[', '..', ']', field('element', $._type)),
+    slice_type: $ => seq('[', '..', ']', optional('const'), field('element', $._type)),
 
-    multi_pointer_type: $ => seq('[', '^', ']', field('element', $._type)),
+    multi_pointer_type: $ => seq('[', '^', ']', optional('const'), field('element', $._type)),
 
     sentinel_pointer_type: $ => seq(
       '[', '^', ':', field('sentinel', $._expression), ']',
@@ -1281,12 +1283,15 @@ module.exports = grammar({
       ']',
     )),
 
+    // 'a[2..]' and 'a[..]' run to the end, so a bare '..' takes no end.
     slice_expression: $ => prec.left(PREC.POSTFIX, seq(
       field('object', $._expression),
       '[',
       optional(field('start', $._expression)),
-      choice('..=', '..<'),
-      optional(field('end', $._expression)),
+      choice(
+        seq(choice('..=', '..<'), optional(field('end', $._expression))),
+        '..',
+      ),
       ']',
     )),
 
@@ -1392,6 +1397,7 @@ module.exports = grammar({
       choice(
         seq('[', field('size', choice($._expression, '?')), ']', field('type', $._type)),
         seq('[', ']', field('type', $._type)),
+        seq('[', '..', ']', field('type', $._type)),
       ),
       '{',
       commaSep($._expression),
@@ -1463,8 +1469,9 @@ module.exports = grammar({
       seq('auto_cast', '(', field('value', $._expression), ')'),
     ),
 
+    // 'int(x)', and '[..]int(a)' to view an array as a slice.
     functional_cast_expression: $ => prec(PREC.POSTFIX, seq(
-      field('type', $.primitive_type),
+      field('type', choice($.primitive_type, $.slice_type)),
       '(',
       field('value', $._expression),
       ')',

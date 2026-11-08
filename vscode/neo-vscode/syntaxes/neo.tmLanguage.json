@@ -39,6 +39,9 @@
       "include": "#global_calls"
     },
     {
+      "include": "#read_only_types"
+    },
+    {
       "include": "#keywords"
     },
     {
@@ -61,6 +64,19 @@
     }
   ],
   "repository": {
+    "read_only_types": {
+      "comment": "The const in '^const T', '[^]const T' and '[..]const T'. Must come before #statements, whose 'const name' rule would otherwise take the type for a variable name.",
+      "patterns": [
+        {
+          "match": "(?<=\\^|\\[\\^\\]|\\[\\.\\.\\])\\s*(const)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.default.neo"
+            }
+          }
+        }
+      ]
+    },
     "keywords": {
       "patterns": [
         {

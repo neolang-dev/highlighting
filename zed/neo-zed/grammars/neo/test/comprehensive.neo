@@ -219,6 +219,32 @@ fn use_pointers() {
     val := p^;
 }
 
+// Read-only pointers and slices
+fn area(r: ^const Rect): int {
+    return r->w * r->h;
+}
+
+fn sum(values: [..]const int): int {
+    mut total: int;
+    for const v in values {
+        total += v;
+    }
+    return total;
+}
+
+fn use_read_only() {
+    const fixed = [?]int{1, 2, 3};
+    view := fixed[..];
+    tail := fixed[1..];
+    head := fixed[..<2];
+    const bytes: [^]const u8 = view.data;
+    mut maybe: ^const int? = null;
+    const nested: ^const ^int = null;
+    literal := [..]int{4, 5};
+    as_slice := [..]int(fixed);
+    name := typename_of(^const int);
+}
+
 // Optionals and results
 fn optional_example(x: int?): int {
     return x ?? 0;

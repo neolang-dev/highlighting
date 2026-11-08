@@ -4285,6 +4285,10 @@
           {
             "type": "primitive_type",
             "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
           }
         ]
       },

@@ -4,6 +4,13 @@ All notable changes to the "neo-lang" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.4]
+
+- Read-only pointer types `^const T`, `[^]const T` and `[..]const T`: the
+  `const` highlights as a keyword and the type after it keeps its type color.
+  Previously the `const name` declaration rule took the type for a variable
+  name, so `^const int` colored `int` as a variable.
+
 ## [0.0.3]
 
 Synced to the current compiler (v0.0.140-dev) and spec:

@@ -74,6 +74,8 @@ module.exports = grammar({
     [$._expression, $.struct_field_pattern],
     [$.parameter, $._type],
     [$._function_type_param, $.parameter],
+    [$.parameter, $.generic_parameter_type],
+    [$.for_range_statement, $.parenthesized_expression],
     [$.variable_declaration],
     [$.constant_declaration],
     [$.shorthand_variable_declaration],
@@ -83,6 +85,7 @@ module.exports = grammar({
     [$.for_c_statement],
     [$.for_in_statement],
     [$.for_range_statement],
+    [$.for_empty_init_statement],
     [$.when_statement],
     [$.typeof_type, $.typeof_expression],
     [$.array_element_pattern, $._expression],
@@ -109,6 +112,7 @@ module.exports = grammar({
       $.operator_overload_declaration,
       $.extern_block,
       $.import_statement,
+      $.no_context_directive,
       $.using_declaration,
       $.test_block,
       $._statement,
@@ -118,19 +122,25 @@ module.exports = grammar({
     // NAMESPACE & IMPORTS
     // =====================================================================
 
+    // '#namespace foo;' declares the file's namespace. The bare '#namespace'
+    // in expression position is the location macro (handled by macro_value).
     namespace_declaration: $ => seq(
-      'namespace',
+      '#namespace',
       field('name', $._namespace_path),
-      ';',
+      optional(';'),
     ),
 
     _namespace_path: $ => sep1($.identifier, '::'),
 
-    import_statement: $ => seq(
+    // The compiler's lexer auto-inserts the ';' after an import path at end
+    // of line, so many files omit it.
+    import_statement: $ => prec.right(seq(
       '#import',
       $._import_body,
-      ';',
-    ),
+      optional(';'),
+    )),
+
+    no_context_directive: $ => prec.right(seq('#no_context', optional(';'))),
 
     _import_body: $ => choice(
       // #import extern "header.h" as name
@@ -155,9 +165,19 @@ module.exports = grammar({
       ),
     ),
 
+    // Stdlib namespaces use angle brackets (#import <math::random>; or file
+    // imports like #import <any.neo>;), user namespaces use quotes.
     _import_path: $ => choice(
+      $.stdlib_import_path,
       $._namespace_path,
       $.string_literal,
+    ),
+
+    stdlib_import_path: $ => seq(
+      '<',
+      $._namespace_path,
+      optional(seq('.', field('extension', $.identifier))),
+      '>',
     ),
 
     import_symbol: $ => seq(
@@ -207,7 +227,6 @@ module.exports = grammar({
       )),
       choice(
         field('body', $.block),
-        seq('undefined', ';'),
         ';',
       ),
     ),
@@ -226,12 +245,36 @@ module.exports = grammar({
         optional(seq(':', field('type', $._type))),
         optional(seq(choice('=', ':='), field('default', $._expression))),
       ),
+      // Inline constrained generic: x: $T :: #number
+      seq(
+        optional('mut'),
+        field('name', $.identifier),
+        ':',
+        field('type', $.generic_parameter_type),
+        '::',
+        field('constraint', $._type_constraint),
+      ),
       // Variadic: name: ..Type
       seq(
         field('name', $.identifier),
         ':',
         '..',
         field('type', $._type),
+      ),
+      // Named C-varargs: args: #c_varargs
+      seq(
+        field('name', $.identifier),
+        ':',
+        '#c_varargs',
+      ),
+      // Compile-time generic parameters: $T, $T :: typeid, $N: int
+      seq(
+        '$',
+        field('name', $.identifier),
+        optional(choice(
+          seq('::', field('constraint', $._type_constraint)),
+          seq(':', field('type', $._type)),
+        )),
       ),
       '#c_varargs',
     ),
@@ -327,7 +370,7 @@ module.exports = grammar({
         field('name', $.identifier),
         optional(seq('=', field('value', $._expression))),
       ),
-      seq('_', '=', field('value', $._expression)),
+      seq('_', optional(seq('=', field('value', $._expression)))),
     ),
 
     union_definition: $ => seq(
@@ -391,14 +434,24 @@ module.exports = grammar({
       seq('$', field('name', $.identifier), ':', field('type', $._type)),
     ),
 
-    _type_constraint: $ => choice(
-      $._type,
-      $.builtin_constraint,
-    ),
+    // Constraints compose with | and the ~ underlying-type modifier:
+    //   $T :: #number, $T :: ~#number, $T :: ~int | ~f32, $T :: ~(int | f32)
+    _type_constraint: $ => prec.left(sep1($._constraint_term, '|')),
+
+    // ~(int | f32) needs no dedicated branch: _type already includes
+    // parenthesized and union types. The precedence matches union_type's '|'
+    // so constraint-level '|' wins (needed for mixes like `int | #decimal`).
+    _constraint_term: $ => prec.left(PREC.BITWISE_OR, seq(
+      optional('~'),
+      choice(
+        $._type,
+        $.builtin_constraint,
+      ),
+    )),
 
     builtin_constraint: $ => choice(
       '#number', '#integer', '#decimal', '#signed',
-      '#unsigned', '#signed_integer', '#boolean',
+      '#unsigned', '#signed_integer', '#unsigned_integer', '#boolean',
     ),
 
     generic_arguments: $ => seq(
@@ -442,13 +495,13 @@ module.exports = grammar({
     _type_identifier: $ => alias($.identifier, $.type_identifier),
 
     primitive_type: $ => choice(
-      'int', 'uint', 'float', 'double',
-      'byte', 'u8', 'u16', 'u32', 'u64', 'u128',
+      'int', 'uint',
+      'u8', 'u16', 'u32', 'u64', 'u128',
       's8', 's16', 's32', 's64', 's128',
       'f16', 'f32', 'f64', 'f128',
-      'bool', 'b8', 'b16', 'b32', 'b64',
+      'bool', 'b1', 'b8', 'b16', 'b32', 'b64',
       'char', 'string', 'cstring',
-      'intptr', 'uintptr', 'rawptr',
+      'ssize', 'usize', 'rawptr',
       'typeid', 'void', 'unknown', 'error',
     ),
 
@@ -491,7 +544,9 @@ module.exports = grammar({
 
     tuple_type: $ => seq('.{', commaSep1($._type), optional(','), '}'),
 
-    function_type: $ => prec.left(seq(
+    // prec.right so 'fn(...): rawptr' greedily takes the return type instead
+    // of a struct field mistaking ': rawptr' for a bit-field width.
+    function_type: $ => prec.right(seq(
       'fn',
       '(',
       commaSep($._function_type_param),
@@ -572,6 +627,7 @@ module.exports = grammar({
       $.until_statement,
       $.for_c_statement,
       $.for_c_shorthand_statement,
+      $.for_empty_init_statement,
       $.for_in_statement,
       $.for_range_statement,
       $.when_statement,
@@ -584,11 +640,11 @@ module.exports = grammar({
       $.unreachable_statement,
       $.defer_statement,
       $.label_statement,
-      $.assert_statement,
       $.push_context_statement,
       $.undefined_block,
       $.compile_time_directive,
       $.attribute_block,
+      $.block,
     ),
 
     // --- Variable Declarations ---
@@ -598,7 +654,7 @@ module.exports = grammar({
       'mut',
       field('name', choice($.identifier, '_')),
       optional(seq(':', field('type', $._type))),
-      optional(seq('=', field('value', $._expression))),
+      optional(seq('=', field('value', choice($._expression, $.brace_init_expression)))),
       ';',
     ),
 
@@ -608,7 +664,7 @@ module.exports = grammar({
       field('name', $.identifier),
       optional(seq(':', field('type', $._type))),
       '=',
-      field('value', $._expression),
+      field('value', choice($._expression, $.brace_init_expression)),
       ';',
     ),
 
@@ -646,9 +702,9 @@ module.exports = grammar({
     // --- Assignment ---
 
     assignment_statement: $ => seq(
-      field('left', $._expression),
+      field('left', choice($._expression, '_')),
       '=',
-      field('right', $._expression),
+      field('right', choice($._expression, $.brace_init_expression)),
       ';',
     ),
 
@@ -703,9 +759,9 @@ module.exports = grammar({
     payload_capture: $ => seq(
       '=>',
       '[',
-      choice('const', 'mut'),
+      optional(choice('const', 'mut')),
       optional('^'),
-      field('name', $.identifier),
+      field('name', choice($.identifier, '_')),
       ']',
     ),
 
@@ -715,14 +771,20 @@ module.exports = grammar({
       optional($.attribute_list),
       'while',
       field('condition', $._expression),
-      field('body', $.block),
+      choice(
+        seq(':', field('body', $._statement)),
+        field('body', $.block),
+      ),
     ),
 
     until_statement: $ => seq(
       optional($.attribute_list),
       'until',
       field('condition', $._expression),
-      field('body', $.block),
+      choice(
+        seq(':', field('body', $._statement)),
+        field('body', $.block),
+      ),
     ),
 
     // --- For ---
@@ -730,42 +792,70 @@ module.exports = grammar({
     for_c_statement: $ => seq(
       optional($.attribute_list),
       'for',
+      optional('('),
       // Only support 'mut' form to avoid ambiguity with for_range_statement
       'mut',
       field('init_name', $.identifier),
       optional(seq(':', field('init_type', $._type))),
-      '=',
-      field('init_value', $._expression),
+      optional(seq('=', field('init_value', $._expression))),
       ';',
-      field('condition', $._expression),
+      optional(field('condition', $._expression)),
       ';',
-      field('update', $._expression),
-      field('body', $.block),
+      optional(field('update', $._expression)),
+      optional(')'),
+      choice(
+        seq(':', field('body', $._statement)),
+        field('body', $.block),
+      ),
     ),
 
-    // Also support the := form
+    // Also support the := form and plain assignment of an existing variable
     for_c_shorthand_statement: $ => seq(
       optional($.attribute_list),
       'for',
+      optional('('),
       field('init_name', $.identifier),
-      ':=',
+      choice(':=', '='),
       field('init_value', $._expression),
       ';',
-      field('condition', $._expression),
+      optional(field('condition', $._expression)),
       ';',
-      field('update', $._expression),
-      field('body', $.block),
+      optional(field('update', $._expression)),
+      optional(')'),
+      choice(
+        seq(':', field('body', $._statement)),
+        field('body', $.block),
+      ),
+    ),
+
+    // Degenerate C-for with an empty init clause: for ;; { } / for ; x < 3; ++x { }
+    for_empty_init_statement: $ => seq(
+      optional($.attribute_list),
+      'for',
+      optional('('),
+      ';',
+      optional(field('condition', $._expression)),
+      ';',
+      optional(field('update', $._expression)),
+      optional(')'),
+      choice(
+        seq(':', field('body', $._statement)),
+        field('body', $.block),
+      ),
     ),
 
     for_in_statement: $ => seq(
       optional($.attribute_list),
       'for',
       optional(field('reverse', '<-')),
+      optional('('),
       field('binding_kind', choice('const', 'mut')),
       field('binding', commaSep1(choice($.identifier, '_'))),
+      optional(seq(':', field('binding_type', $._type))),
       'in',
       field('iterable', $._expression),
       optional(seq(';', field('step', $._expression))),
+      optional(')'),
       choice(
         seq(':', field('body', $._statement)),
         field('body', $.block),
@@ -776,8 +866,10 @@ module.exports = grammar({
       optional($.attribute_list),
       'for',
       optional(field('reverse', '<-')),
+      optional('('),
       field('range', $._expression),
       optional(seq(';', field('step', $._expression))),
+      optional(')'),
       choice(
         seq(':', field('body', $._statement)),
         field('body', $.block),
@@ -809,10 +901,8 @@ module.exports = grammar({
       ),
     ),
 
-    _when_case_body: $ => choice(
-      seq('{', repeat($._statement), '}'),
-      $._statement,
-    ),
+    // A bare block is itself a statement, so it covers `case: { ... }`.
+    _when_case_body: $ => $._statement,
 
     when_pattern: $ => choice(
       $.range_pattern,
@@ -881,12 +971,10 @@ module.exports = grammar({
 
     // --- Defer ---
 
+    // A bare block is itself a statement, so it covers `defer { ... }`.
     defer_statement: $ => seq(
       field('kind', choice('defer', 'defer_err')),
-      choice(
-        field('body', $.block),
-        field('body', $._statement),
-      ),
+      field('body', $._statement),
     ),
 
     // --- Label ---
@@ -895,17 +983,6 @@ module.exports = grammar({
       field('name', $.identifier),
       ':',
     )),
-
-    // --- Assert ---
-
-    assert_statement: $ => seq(
-      field('kind', choice('assert', 'assert_db')),
-      '(',
-      field('condition', $._expression),
-      optional(seq(',', field('message', $._expression))),
-      ')',
-      ';',
-    ),
 
     // --- Push Context ---
 
@@ -926,13 +1003,12 @@ module.exports = grammar({
 
     // --- Test Block ---
 
+    // '#test("name") { ... }' or unnamed '#test { ... }'; skipping is done
+    // with the #[skip] attribute.
     test_block: $ => seq(
       optional($.attribute_list),
-      choice(
-        seq('skip', 'test'),
-        seq('test', optional('skip')),
-      ),
-      optional(field('name', $.string_literal)),
+      '#test',
+      optional(seq('(', field('name', $.string_literal), ')')),
       field('body', $.block),
     ),
 
@@ -983,6 +1059,7 @@ module.exports = grammar({
       $.typeinfo_expression,
       $.type_assert_expression,
       $.builtin_call_expression,
+      $.global_call_expression,
       $.macro_value,
       $.compile_time_run,
       $.compile_time_code,
@@ -991,6 +1068,10 @@ module.exports = grammar({
       $.undefined_expression,
       $.unreachable_expression,
       $.unused_expression,
+      $.volatile_expression,
+      $.enum_shorthand_expression,
+      $.optional_unwrap_expression,
+      alias($.primitive_type, $.type_value),
     ),
 
     // --- Literals ---
@@ -1004,17 +1085,22 @@ module.exports = grammar({
       $.null_literal,
     ),
 
+    // Float suffixes: f/F (f32), d/D (f64), h/H (f16), q/Q (f128).
     number_literal: $ => token(choice(
       // Hex: 0xFF_AA
       /0[xX][0-9a-fA-F][0-9a-fA-F_]*/,
-      // Octal: 0q72
-      /0[qQ][0-7][0-7_]*/,
+      // Quaternary (base 4): 0q1230
+      /0[qQ][0-3][0-3_]*/,
       // Binary: 0b1010
       /0[bB][01][01_]*/,
-      // Float with decimal digits: 3.14, 3.14f, 3.14d, 12.0
-      /[0-9][0-9_]*\.[0-9][0-9_]*[fdFD]?/,
+      // Float with decimal digits: 3.14, 3.14f, 1.5e-3, 6.02e23d
+      /[0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9][0-9_]*)?[fdhqFDHQ]?/,
       // Float with suffix only (no decimal digits): 12.f, 12.d
-      /[0-9][0-9_]*\.[fdFD]/,
+      /[0-9][0-9_]*\.[fdhqFDHQ]/,
+      // Scientific notation without a decimal point: 1e5, 3e-2f
+      /[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*[fdhqFDHQ]?/,
+      // Integer with a float suffix: 12f
+      /[0-9][0-9_]*[fdhqFDHQ]/,
       // Integer: 42, 1_000_000
       /[0-9][0-9_]*/,
     )),
@@ -1183,6 +1269,8 @@ module.exports = grammar({
 
     argument: $ => choice(
       $._expression,
+      // Explicit generic type arguments: f(int, x), size(^s32)
+      prec.dynamic(-1, $._type),
       seq(field('name', $.identifier), ':', field('value', $._expression)),
     ),
 
@@ -1216,7 +1304,7 @@ module.exports = grammar({
     arrow_expression: $ => prec.left(PREC.POSTFIX, seq(
       field('object', $._expression),
       '->',
-      field('field', $.identifier),
+      field('field', choice($.identifier, $.number_literal)),
     )),
 
     optional_chain_expression: $ => prec.left(PREC.POSTFIX, seq(
@@ -1282,6 +1370,10 @@ module.exports = grammar({
       field('type', choice(
         alias($.identifier, $.type_identifier),
         $.qualified_identifier,
+        // Generic instantiation: Pair<int, string>{...}
+        $.generic_type,
+        // Builtin-struct views, e.g. string{data: ..., len: ...}
+        $.primitive_type,
       )),
       '{',
       commaSep($.struct_init_field),
@@ -1331,7 +1423,7 @@ module.exports = grammar({
 
     tuple_expression: $ => seq(
       '.{',
-      commaSep1($._expression),
+      commaSep($._expression),
       optional(','),
       '}',
     ),
@@ -1393,8 +1485,7 @@ module.exports = grammar({
     builtin_call_expression: $ => prec(PREC.POSTFIX, seq(
       field('function', alias(choice(
         // Memory operations
-        'panic', 'new', 'delete', 'make', 'free',
-        'append', 'prepend',
+        'prepend',
         'make_safe', 'new_safe', 'new_undefined', 'new_array',
         // Type introspection
         'name_of', 'type_info', 'inner_type',
@@ -1407,7 +1498,19 @@ module.exports = grammar({
         'soa_fields', 'soa_stride', 'aos_to_soa', 'soa_to_aos',
       ), $.builtin_function)),
       '(',
-      commaSep(choice($.argument, $._type)),
+      commaSep($.argument),
+      optional(','),
+      ')',
+    )),
+
+    // --- Global Calls ---
+
+    // name!(...) calls a #[__global] runtime function (assert!, panic!, append!, new!, ...).
+    global_call_expression: $ => prec(PREC.POSTFIX, seq(
+      field('function', alias($.identifier, $.global_function)),
+      token.immediate('!'),
+      '(',
+      commaSep($.argument),
       optional(','),
       ')',
     )),
@@ -1415,6 +1518,33 @@ module.exports = grammar({
     // --- Unused ---
 
     unused_expression: $ => 'unused',
+
+    // Volatile access qualifier: volatile reg^ = x; y := volatile reg^;
+    volatile_expression: $ => prec.right(PREC.UNARY, seq(
+      'volatile',
+      field('operand', $._expression),
+    )),
+
+    // Enum shorthand in expression position: Foo{code: .Bad_Input}
+    enum_shorthand_expression: $ => prec(PREC.UNARY, seq(
+      '.',
+      field('variant', $.identifier),
+    )),
+
+    // Unwrap-or-panic: x.? (optionals) and x.! (results)
+    optional_unwrap_expression: $ => prec.left(PREC.POSTFIX, seq(
+      field('operand', $._expression),
+      choice('.?', '.!'),
+    )),
+
+    // Bare brace initializer on a typed declaration: mut a: [5]int = {1, 2, 3};
+    // Also the empty form: mut m: [string: int] = {};
+    brace_init_expression: $ => seq(
+      '{',
+      commaSep($._expression),
+      optional(','),
+      '}',
+    ),
 
     // --- Macro Value ---
 
@@ -1455,9 +1585,10 @@ module.exports = grammar({
       )),
     ),
 
+    // A bare block is itself a statement, so it covers `#[attr] { ... }`.
     attribute_block: $ => seq(
       $.attribute_list,
-      choice($.block, $._statement),
+      $._statement,
     ),
 
     // =====================================================================

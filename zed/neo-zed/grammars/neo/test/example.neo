@@ -1,7 +1,7 @@
-namespace main;
+#namespace main;
 
-#import fmt;
-#import math as M;
+#import <fmt>;
+#import <math> as M;
 #import "foo::bar";
 
 // Variables
@@ -23,7 +23,7 @@ fn say_hi(name: string) {
 
 // Overloads
 fn powi(x: int, y: int): int { return x; }
-fn powf(x: float, y: float): float { return x; }
+fn powf(x: f32, y: f32): f32 { return x; }
 fn pow overloads {powi, powf}
 
 // Typedefs
@@ -91,8 +91,8 @@ fn use_pointers() {
 }
 
 // Test block
-test "addition" {
-    assert(add(1, 2) == 3);
+#test("addition") {
+    assert!(add(1, 2) == 3);
 }
 
 // Attributes

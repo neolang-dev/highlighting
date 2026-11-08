@@ -35,11 +35,7 @@
   "union"
   "operator"
   "overloads"
-  "test"
-  "skip"
   "push_context"
-  "assert"
-  "assert_db"
   "simd"
 ] @keyword
 
@@ -52,15 +48,21 @@
   "const"
 ] @keyword
 
-; Import keywords
+; Import & file-level directive keywords
 [
   "extern"
   "#import"
+  "#namespace"
+  "#test"
+  "#no_context"
   "using"
   "from"
   "as"
   "in"
 ] @keyword
+
+; Access qualifiers
+"volatile" @keyword
 
 ; Compile-time directive keywords
 [
@@ -114,10 +116,19 @@
 
 (builtin_function) @keyword
 
+; name!(...) calls to #[__global] runtime functions
+(global_call_expression
+  function: (global_function) @function.builtin
+  "!" @function.builtin)
+
 ; Identifiers that are builtins but not grammar keywords (used as both
 ; function calls and properties like arr.len)
 ((identifier) @keyword
   (#any-match? @keyword "^(len|cap|includes)$"))
+
+; The implicit context (a ^Neo_Context threaded into every function)
+((identifier) @variable.special
+  (#eq? @variable.special "context"))
 
 ; --------------------------------------------------------------------------
 ; Comments
@@ -156,6 +167,9 @@
 (primitive_type) @type.builtin
 (type_identifier) @type
 (self_type) @type.builtin
+
+; Primitive types used in expression position (e.g. `tid == int`)
+(type_value) @type.builtin
 
 (qualified_type
   namespace: (identifier) @type
@@ -247,6 +261,10 @@
 (error_variant
   name: (identifier) @constant)
 
+; Enum shorthand in expressions and patterns: .Variant
+(enum_shorthand_expression
+  variant: (identifier) @constant)
+
 ; --------------------------------------------------------------------------
 ; Labels
 ; --------------------------------------------------------------------------
@@ -287,6 +305,9 @@
 (import_symbol
   name: (identifier) @type)
 
+(stdlib_import_path
+  (identifier) @type)
+
 ; --------------------------------------------------------------------------
 ; Compile-time
 ; --------------------------------------------------------------------------
@@ -326,11 +347,14 @@
   "=>"
   "->"
   "?."
+  ".?"
+  ".!"
   ".."
   "..="
   "..<"
   "..."
   "&"
+  "~"
   "@@"
 ] @operator
 

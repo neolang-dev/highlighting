@@ -9,6 +9,9 @@
       "include": "#strings"
     },
     {
+      "include": "#namespace_decl"
+    },
+    {
       "include": "#imports"
     },
     {
@@ -33,7 +36,13 @@
       "include": "#macros"
     },
     {
+      "include": "#global_calls"
+    },
+    {
       "include": "#keywords"
+    },
+    {
+      "include": "#builtins"
     },
     {
       "include": "#statements"
@@ -56,32 +65,38 @@
       "patterns": [
         {
           "name": "keyword.control.neo",
-          "match": "\\b(if|else|elif|while|until|for|return|yields|when|fallthrough|break|continue|in|defer|defer_err|restrict|goto|try|push_context)\\b"
+          "match": "\\b(if|else|elif|while|until|for|return|yields|when|fallthrough|break|continue|in|defer|defer_err|goto|try|push_context|unreachable)\\b"
+        },
+        {
+          "name": "storage.modifier.neo",
+          "match": "\\b(restrict|volatile)\\b"
         },
         {
           "name": "keyword.reserved.neo",
-          "match": "\\b(impl|constimpl|endimpl|md|does|behavior)\\b"
+          "match": "\\b(impl|constimpl|endimpl|md|does|behavior|float|double|byte|intptr|uintptr)\\b"
         },
         {
+          "comment": "Intrinsic keywords recognized by the lexer (+ type_assert, a compiler-known builtin)",
           "name": "keyword.intrinsics.neo",
-          "match": "\\b(cast|recast|auto_cast|type_of|typeid_of|typeinfo_of|typename_of|size_of|name_of|align_of|type_info|inner_type|fields_of|field_count|has_field|field_type|enum_values|enum_names|enum_count|is_pointer|is_array|is_slice|is_dynamic_array|is_struct|is_enum|is_union|is_optional|is_result|is_function|is_numeric|is_integer|is_float|is_signed|is_unsigned|is_soa|is_const|soa_fields|soa_stride|aos_to_soa|soa_to_aos)\\b"
-        },
-        {
-          "name": "keyword.operator.memory.neo",
-          "match": "\\b(new|delete|make|make_safe|free|new_safe|new_undefined|new_array|append|prepend|len|cap|includes)\\b"
+          "match": "\\b(cast|recast|auto_cast|type_of|typename_of|typeid_of|typeinfo_of|size_of|align_of|type_assert)\\b"
         },
         {
           "name": "constant.language.null.neo",
-          "match": "\\b(null|undefined|unused|unreachable)\\b"
+          "match": "\\b(null|undefined)\\b"
         },
         {
           "name": "constant.language.boolean.neo",
           "match": "\\b(true|false)\\b"
         },
         {
-          "comment": "Null coalescing assignment",
+          "comment": "Null-coalescing assignment",
           "match": "\\?\\?=",
           "name": "keyword.operator.assignment.null-coalescing.neo"
+        },
+        {
+          "comment": "Logical-or assignment",
+          "match": "\\|\\|=",
+          "name": "keyword.operator.assignment.logical.neo"
         },
         {
           "comment": "Null coalescing",
@@ -89,14 +104,38 @@
           "name": "keyword.operator.null-coalescing.neo"
         },
         {
+          "comment": "Optional chaining",
+          "match": "\\?\\.",
+          "name": "keyword.operator.optional-chain.neo"
+        },
+        {
+          "comment": "Enum shorthand: .Variant (a dot not preceded by a value expression)",
+          "match": "(?<![\\w)\\]}^\"])\\.([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "variable.other.enummember.neo"
+            }
+          }
+        },
+        {
           "comment": "Optional unwrap",
           "match": "\\.\\?",
           "name": "keyword.operator.optional-unwrap.neo"
         },
         {
+          "comment": "Force unwrap",
+          "match": "\\.!",
+          "name": "keyword.operator.optional-unwrap.force.neo"
+        },
+        {
           "comment": "Payload capturing / fat arrow",
           "match": "=>",
           "name": "keyword.operator.arrow.fat.neo"
+        },
+        {
+          "comment": "Reverse-iteration / left arrow",
+          "match": "<-",
+          "name": "keyword.operator.arrow.left.neo"
         },
         {
           "comment": "Pointer field access",
@@ -129,48 +168,72 @@
           "name": "keyword.operator.concatenation.neo"
         },
         {
+          "comment": "Label address operator",
+          "match": "@@",
+          "name": "keyword.operator.label.neo"
+        },
+        {
+          "comment": "Saturating arithmetic operators",
+          "match": "(@\\+\\+|@--|@<<=|@<<|@\\+=|@-=|@\\*=|@/=|@\\+|@-|@\\*|@/)",
+          "name": "keyword.operator.arithmetic.saturating.neo"
+        },
+        {
           "comment": "Wrapping arithmetic operators",
           "match": "(%\\+\\+|%--|%\\+=|%-=|%\\*=|%/=|%\\+|%-|%\\*|%/)",
           "name": "keyword.operator.arithmetic.wrapping.neo"
         },
         {
-          "match": "(<<|>>|~)",
-          "name": "keyword.operator.bitwise.shift.neo"
+          "comment": "Exponentiation",
+          "match": "\\*\\*",
+          "name": "keyword.operator.arithmetic.exponent.neo"
         },
         {
+          "comment": "Bitwise / shift assignment",
           "match": "((&|\\||\\^|~|<<|>>)=)",
           "name": "keyword.operator.assignment.bitwise.neo"
         },
         {
+          "comment": "Bitwise shift / not",
+          "match": "(<<|>>|~)",
+          "name": "keyword.operator.bitwise.shift.neo"
+        },
+        {
+          "comment": "Comparison",
           "match": "(==|!=|<=|>=|<|>)",
           "name": "keyword.operator.comparison.neo"
         },
         {
-          "match": "(@?[+\\*/%\\-]=)",
+          "comment": "Arithmetic assignment",
+          "match": "([+\\*/%\\-]=)",
           "name": "keyword.operator.assignment.arithmetic.neo"
         },
         {
-          "match": "(:=|::=|=)",
+          "comment": "Assignment / declaration",
+          "match": "(::=|:=|=)",
           "name": "keyword.operator.assignment.neo"
         },
         {
-          "match": "(@?(\\-\\-|\\+\\+))",
+          "comment": "Increment / decrement",
+          "match": "(\\-\\-|\\+\\+)",
           "name": "keyword.operator.increment-decrement.neo"
         },
         {
-          "match": "(@?(\\-|\\+|\\*|\\/|%))",
+          "comment": "Arithmetic",
+          "match": "(\\-|\\+|\\*|\\/|%)",
           "name": "keyword.operator.arithmetic.neo"
         },
         {
+          "comment": "Logical",
           "match": "(!|&&|\\|\\|)",
           "name": "keyword.operator.logical.neo"
         },
         {
+          "comment": "Bitwise",
           "match": "(\\||&)",
           "name": "keyword.operator.bitwise.neo"
         },
         {
-          "match": "\\b(as|extern)\\b",
+          "match": "\\b(as|extern|api)\\b",
           "name": "keyword.other.use.neo"
         },
         {
@@ -178,20 +241,47 @@
           "match": "\\b(struct|enum|error|union)\\b"
         },
         {
-          "match": "\\b(bool|b8|b16|b32|b64|char|string|cstring|int|uint|uintptr|intptr|float|double|s8|s16|s32|s64|s128|u8|u16|u32|u64|u128|f16|f32|f64|f128|byte|void|typeid|unknown|rawptr|error)\\b",
+          "match": "\\b(bool|b1|b8|b16|b32|b64|char|string|cstring|int|uint|ssize|usize|s8|s16|s32|s64|s128|u8|u16|u32|u64|u128|f16|f32|f64|f128|void|typeid|unknown|rawptr|Result|Optional)\\b",
           "name": "storage.type.primitive.neo"
+        },
+        {
+          "comment": "The implicit context (^Neo_Context threaded into every function)",
+          "match": "\\b(context)\\b",
+          "name": "variable.language.context.neo"
         },
         {
           "name": "keyword.other.included",
           "match": "\\b(assert|assert_db|panic)\\b"
+        }
+      ]
+    },
+    "global_calls": {
+      "patterns": [
+        {
+          "comment": "name!(...) calls a #[__global] runtime function (assert!, panic!, append!, new!, ...). Primitive and capitalized names are skipped so a Result type like string!(E) or Foo!(E) is not matched.",
+          "match": "\\b(?!(?:bool|b1|b8|b16|b32|b64|char|string|cstring|int|uint|uintptr|intptr|ssize|usize|float|double|s8|s16|s32|s64|s128|u8|u16|u32|u64|u128|f16|f32|f64|f128|byte|void|typeid|unknown|rawptr)\\b)([a-z_][A-Za-z0-9_]*)(!)(?=\\()",
+          "captures": {
+            "1": {
+              "name": "support.function.builtin.neo"
+            },
+            "2": {
+              "name": "support.function.builtin.neo"
+            }
+          }
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "comment": "Built-in reflection / type-introspection functions",
+          "name": "support.function.builtin.neo",
+          "match": "\\b(is_pointer|is_array|is_slice|is_dynamic_array|is_struct|is_enum|is_union|is_optional|is_result|is_function|is_numeric|is_integer|is_float|is_signed|is_unsigned|is_soa|is_const|inner_type|fields_of|field_count|has_field|field_type|enum_values|enum_names|enum_count|soa_fields|soa_stride|aos_to_soa|soa_to_aos|name_of|type_info)\\b"
         },
         {
-          "name": "entity.name.type.Self.neo",
-          "match": "\\b(Self)\\b"
-        },
-        {
-          "name": "keyword.other.neo",
-          "match": "\\b(distinct)\\b"
+          "comment": "Built-in container helpers not yet in the runtime (runtime globals are called as name!(...), see global_calls)",
+          "name": "support.function.builtin.neo",
+          "match": "\\b(make_safe|prepend|includes|new_array|new_array_safe|new_safe|new_undefined|new_undefined_safe|len|cap)\\b"
         }
       ]
     },
@@ -274,17 +364,6 @@
           }
         },
         {
-          "match": "\\b(namespace)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s*(as)\\s*([A-Za-z_][A-Za-z0-9_]*))?\\b",
-          "captures": {
-            "1": {
-              "name": "keyword.default.neo"
-            },
-            "2": {
-              "name": "entity.name.type.module.neo"
-            }
-          }
-        },
-        {
           "match": "\\b(use|using)\\s+(('|\")?[A-Za-z_][A-Za-z0-9_:.]*('|\")?)(?:\\s*(as)\\s*([A-Za-z_][A-Za-z0-9_]*))?",
           "captures": {
             "1": {
@@ -296,35 +375,23 @@
           }
         },
         {
-          "comment": "test \"name\" { or test skip",
-          "match": "\\b(test)\\s+(\"[^\"]*\"|skip)\\b",
+          "comment": "Bare fn in function-pointer types and lambdas: fn(^Allocator): rawptr — the named-fn rules above don't reach these",
+          "match": "\\b(fn)\\b",
+          "name": "keyword.default.neo"
+        }
+      ]
+    },
+    "namespace_decl": {
+      "patterns": [
+        {
+          "comment": "#namespace name; declares the file's namespace. Bare #namespace in expression position is the location macro (see #builtin_compile_time).",
+          "match": "(#namespace)\\s+([A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*)",
           "captures": {
             "1": {
-              "name": "keyword.default.neo"
+              "name": "keyword.control.neo"
             },
             "2": {
-              "name": "string.quoted.double.neo"
-            }
-          }
-        },
-        {
-          "comment": "skip test",
-          "match": "\\b(skip)\\s+(test)\\b",
-          "captures": {
-            "1": {
-              "name": "keyword.default.neo"
-            },
-            "2": {
-              "name": "keyword.default.neo"
-            }
-          }
-        },
-        {
-          "comment": "test { (unnamed test block)",
-          "match": "\\b(test)\\s*\\{",
-          "captures": {
-            "1": {
-              "name": "keyword.default.neo"
+              "name": "entity.name.type.module.neo"
             }
           }
         }
@@ -355,7 +422,7 @@
         },
         {
           "comment": "#import { ... } from name;",
-          "match": "(#import)\\s+(\\{[^}]*\\})\\s+(from)\\s+([A-Za-z_][A-Za-z0-9_:]*)",
+          "match": "(#import)\\s+(\\{[^}]*\\})\\s+(from)\\s+(<[^>]*>|\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_:]*)",
           "captures": {
             "1": {
               "name": "keyword.control.neo"
@@ -373,7 +440,7 @@
         },
         {
           "comment": "#import using name; or #import using \"name\";",
-          "match": "(#import)\\s+(using)\\s+(\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_:]*)",
+          "match": "(#import)\\s+(using)\\s+(<[^>]*>|\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_:]*)",
           "captures": {
             "1": {
               "name": "keyword.control.neo"
@@ -388,7 +455,7 @@
         },
         {
           "comment": "#import name as alias; or #import name using;",
-          "match": "(#import)\\s+(\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_:]*)\\s+(as|using)(?:\\s+([A-Za-z_][A-Za-z0-9_]*))?",
+          "match": "(#import)\\s+(<[^>]*>|\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_:]*)\\s+(as|using)(?:\\s+([A-Za-z_][A-Za-z0-9_]*))?",
           "captures": {
             "1": {
               "name": "keyword.control.neo"
@@ -406,7 +473,7 @@
         },
         {
           "comment": "#import name; or #import \"name\";",
-          "match": "(#import)\\s+(\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_:]*)",
+          "match": "(#import)\\s+(<[^>]*>|\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_:]*)",
           "captures": {
             "1": {
               "name": "keyword.control.neo"
@@ -453,8 +520,20 @@
     "directives": {
       "patterns": [
         {
-          "comment": "Compile-time directives (not #import, handled separately)",
-          "match": "#(run|insert|code|macro|modify|bake_constants|specialize|define|undef|set|unset|if|elif|else|ifndef|for|error|warn|info|todo|assert|asm|soa|ordered)\\b",
+          "comment": "#test(\"name\") { or unnamed #test {; skipping uses the #[skip] attribute",
+          "match": "(#test)\\b(?:\\s*\\(\\s*(\"[^\"]*\")\\s*\\))?",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.neo"
+            },
+            "2": {
+              "name": "string.quoted.double.neo"
+            }
+          }
+        },
+        {
+          "comment": "Compile-time directives (not #import/#namespace, handled separately)",
+          "match": "#(run|insert|code|macro|modify|bake_constants|specialize|define|undef|set|unset|if|elif|else|ifndef|for|error|warn|info|todo|assert|asm|soa|ordered|context_append|no_context|c_varargs)\\b",
           "name": "keyword.control.directive.neo"
         }
       ]
@@ -564,24 +643,34 @@
           "match": "\\b0[xX][0-9a-fA-F_]+\\b"
         },
         {
-          "comment": "Octal literal",
-          "name": "constant.numeric.octal.neo",
-          "match": "\\b0[qQ][0-7_]+\\b"
-        },
-        {
           "comment": "Binary literal",
           "name": "constant.numeric.binary.neo",
           "match": "\\b0[bB][01_]+\\b"
         },
         {
-          "comment": "Float literal with decimal point",
-          "name": "constant.numeric.float.neo",
-          "match": "\\b[0-9][0-9_]*\\.[0-9_]*[fFdD]?\\b"
+          "comment": "Quaternary (base-4) literal",
+          "name": "constant.numeric.quaternary.neo",
+          "match": "\\b0[qQ][0-3_]+\\b"
         },
         {
-          "comment": "Float literal with suffix only (e.g. 12f)",
+          "comment": "Float literal with decimal point and optional exponent/suffix",
           "name": "constant.numeric.float.neo",
-          "match": "\\b[0-9][0-9_]*[fFdD]\\b"
+          "match": "\\b[0-9][0-9_]*\\.[0-9_]+([eE][+-]?[0-9_]+)?[fFdDhHqQ]?\\b"
+        },
+        {
+          "comment": "Float literal with exponent (no decimal point)",
+          "name": "constant.numeric.float.neo",
+          "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9_]+[fFdDhHqQ]?\\b"
+        },
+        {
+          "comment": "Float literal with dot + suffix, no decimal digits (e.g. 12.f, 100.d)",
+          "name": "constant.numeric.float.neo",
+          "match": "\\b[0-9][0-9_]*\\.[fFdDhHqQ]\\b"
+        },
+        {
+          "comment": "Float literal with suffix only (e.g. 12f, 5h)",
+          "name": "constant.numeric.float.neo",
+          "match": "\\b[0-9][0-9_]*[fFdDhHqQ]\\b"
         },
         {
           "comment": "Integer literal",
@@ -601,53 +690,14 @@
     "comments": {
       "patterns": [
         {
-          "begin": "/\\*\\*(?!/)",
+          "comment": "Neo block comments are /- ... -/ (nesting); there is no C-style /* */",
+          "begin": "/-",
           "beginCaptures": {
             "0": {
               "name": "punctuation.definition.comment.begin.neo"
             }
           },
-          "end": "\\*/",
-          "endCaptures": {
-            "0": {
-              "name": "punctuation.definition.comment.end.neo"
-            }
-          },
-          "name": "comment.block.documentation.neo",
-          "patterns": [
-            {
-              "include": "#nested"
-            }
-          ]
-        },
-        {
-          "begin": "/\\*:",
-          "beginCaptures": {
-            "0": {
-              "name": "punctuation.definition.comment.begin.neo"
-            }
-          },
-          "end": "\\*/",
-          "endCaptures": {
-            "0": {
-              "name": "punctuation.definition.comment.end.neo"
-            }
-          },
-          "name": "comment.block.documentation.playground.neo",
-          "patterns": [
-            {
-              "include": "#nested"
-            }
-          ]
-        },
-        {
-          "begin": "/\\*|/-",
-          "beginCaptures": {
-            "0": {
-              "name": "punctuation.definition.comment.begin.neo"
-            }
-          },
-          "end": "\\*/|-/",
+          "end": "-/",
           "endCaptures": {
             "0": {
               "name": "punctuation.definition.comment.end.neo"
@@ -661,7 +711,7 @@
           ]
         },
         {
-          "match": "\\*/|-/",
+          "match": "-/",
           "name": "invalid.illegal.unexpected-end-of-block-comment.neo"
         },
         {
@@ -708,8 +758,8 @@
       ],
       "repository": {
         "nested": {
-          "begin": "/\\*|/-",
-          "end": "\\*/|-/",
+          "begin": "/-",
+          "end": "-/",
           "patterns": [
             {
               "include": "#nested"

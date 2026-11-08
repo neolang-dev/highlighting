@@ -1,11 +1,15 @@
 id = "neo"
 name = "Neo"
-version = "0.0.1"
+version = "0.0.2"
 schema_version = 1
 description = "Neo language support for Zed."
 authors = ["Skyler Burwell"]
 languages = ["languages/neo"]
 
+# The rev below is a local commit in grammars/neo (a git clone with origin
+# set to the repository URL — Zed requires that for dev installs; a failed
+# fetch is fine as long as the rev checks out locally). Before publishing,
+# push it: `cd grammars/neo && git push origin HEAD:main`.
 [grammars.neo]
 repository = "https://codeberg.org/neolang/tree-sitter-neo"
-rev = "97b3c3552acbeb08b1dc5be41053ddccb0b2c40b"
+rev = "961896e5222a909ea63c8bd5fb7699123c55d56c"
